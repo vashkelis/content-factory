@@ -50,6 +50,7 @@ class RunMeta(BaseModel):
     topic: str
     language: Lang
     status: str = "initialized"
+    needs_clarification: bool = False
     model: Optional[str] = None
     error_message: Optional[str] = None
     created_at: str = Field(default_factory=lambda: datetime.utcnow().isoformat())

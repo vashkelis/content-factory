@@ -172,34 +172,37 @@ def show(
         console.print(content)
 
 
-# ── core (with integrated clarification) ─────────────────────────────────────
+# ── core (with non-blocking clarification analysis) ──────────────────────────
 
 @app.command()
 def core(
     run_id: str = typer.Argument(..., help="Run ID (exact name or prefix)."),
     output: str = typer.Option(DEFAULT_RUNS_DIR, "-o", "--output", help="Base directory for runs."),
     model: str = typer.Option("gpt-4o-mini", "--model", "-m", help="OpenAI model to use."),
-    skip_clarify: bool = typer.Option(False, "--skip-clarify", help="Skip the clarification check."),
+    skip_clarify: bool = typer.Option(False, "--skip-clarify", help="Skip the clarification analysis."),
 ) -> None:
     """Generate ContentCore for a run using LLM.
 
     Before generating, the brief is evaluated for completeness.
-    If clarification is needed, questions are printed and core generation is paused.
-    Use 'cf clarify' to provide answers, then re-run 'cf core'.
-    Pass --skip-clarify to bypass this check.
+    If the brief is weak, clarification suggestions are printed AFTER generation,
+    and the core is marked as low-context (may contain METRIC_NEEDED placeholders).
+    Use 'cf clarify' to add context, then re-run 'cf core' for a richer output.
     """
     run_dir = _resolve_run(output, run_id)
 
-    brief_path = run_dir / "brief.json"
-    if not brief_path.exists():
+    brief_path_file = run_dir / "brief.json"
+    if not brief_path_file.exists():
         rprint(f"[red]Error:[/red] brief.json not found in {run_dir}")
         raise typer.Exit(1)
 
-    brief = Brief.model_validate(read_json(brief_path))
+    brief = Brief.model_validate(read_json(brief_path_file))
     meta = _load_meta(run_dir)
     provider = _make_provider(model)
 
-    # ── Step 1: Clarification check ──────────────────────────────────────
+    # ── Step 1: Clarification analysis (non-blocking) ────────────────────
+    clarification_questions: list[str] = []
+    needs_clarification = False
+
     if not skip_clarify:
         rprint(f"[blue]Evaluating brief completeness[/blue] for [bold]{brief.topic}[/bold]...")
 
@@ -212,29 +215,19 @@ def core(
             clarify_result = None
 
         if clarify_error:
-            rprint(f"[yellow]Warning:[/yellow] Clarification check failed: {clarify_error}")
+            rprint(f"[yellow]Warning:[/yellow] Clarification analysis failed: {clarify_error}")
             rprint("[dim]Proceeding with core generation anyway.[/dim]")
         elif clarify_result and clarify_result.needs_clarification:
-            # Brief needs work -- print questions and stop
-            meta.status = "needs_clarification"
-            meta.model = model
-            meta.error_message = None
-            _save_meta(run_dir, meta)
-
-            rprint("\n[yellow]Brief needs clarification.[/yellow] Answer the questions below, then run:")
-            rprint(f"  [bold]cf clarify {run_id} -m \"your answers\"[/bold]\n")
-            for i, q in enumerate(clarify_result.questions, 1):
-                rprint(f"  [bold]{i}.[/bold] {q}")
-            rprint()
-
-            # Save questions to run for auditability
+            needs_clarification = True
+            clarification_questions = clarify_result.questions
+            # Save questions for auditability (but don't stop)
             write_json(
                 run_dir / "clarification.json",
                 clarify_result.model_dump(),
             )
-            return
+            rprint("[yellow]Brief has limited context.[/yellow] Generating draft anyway (may use placeholders).")
 
-    # ── Step 2: Core generation ──────────────────────────────────────────
+    # ── Step 2: Core generation (always proceeds) ────────────────────────
     rprint(f"[blue]Generating ContentCore[/blue] for [bold]{brief.topic}[/bold] with model [dim]{model}[/dim]...")
 
     from content_factory.graph import run_core_pipeline
@@ -247,6 +240,7 @@ def core(
 
     if error:
         meta.status = "error"
+        meta.needs_clarification = needs_clarification
         meta.error_message = error
         meta.model = model
         _save_meta(run_dir, meta)
@@ -257,12 +251,28 @@ def core(
     core_path = run_dir / "core.json"
     write_json(core_path, core_result.model_dump())  # type: ignore[union-attr]
 
-    meta.status = "core_generated"
+    # Update meta with appropriate status
+    if needs_clarification:
+        meta.status = "core_generated_low_context"
+        meta.needs_clarification = True
+    else:
+        meta.status = "core_generated"
+        meta.needs_clarification = False
+
     meta.model = model
     meta.error_message = None
     _save_meta(run_dir, meta)
 
     rprint(f"[green]ContentCore written:[/green] {core_path}")
+
+    # ── Step 3: Print clarification suggestions (non-blocking) ───────────
+    if needs_clarification and clarification_questions:
+        rprint()
+        rprint("[yellow]Draft generated, but clarification is recommended:[/yellow]")
+        for i, q in enumerate(clarification_questions, 1):
+            rprint(f"  [bold]{i}.[/bold] {q}")
+        rprint()
+        rprint(f"[dim]To enrich the core, run: cf clarify {run_id} -m \"your additional context\"[/dim]")
 
 
 # ── clarify ──────────────────────────────────────────────────────────────────
@@ -275,17 +285,17 @@ def clarify(
 ) -> None:
     """Provide answers to clarification questions and update the brief.
 
-    Appends your answers to context_notes in brief.json and resets status
-    so that 'cf core' can run again.
+    Appends your answers to context_notes in brief.json and resets
+    needs_clarification flag so that 'cf core' can produce a richer output.
     """
     run_dir = _resolve_run(output, run_id)
 
-    brief_path = run_dir / "brief.json"
-    if not brief_path.exists():
+    brief_path_file = run_dir / "brief.json"
+    if not brief_path_file.exists():
         rprint(f"[red]Error:[/red] brief.json not found in {run_dir}")
         raise typer.Exit(1)
 
-    brief = Brief.model_validate(read_json(brief_path))
+    brief = Brief.model_validate(read_json(brief_path_file))
     meta = _load_meta(run_dir)
 
     # Append answers to context_notes
@@ -294,15 +304,17 @@ def clarify(
     else:
         brief.context_notes = message
 
-    write_json(brief_path, brief.model_dump())
+    write_json(brief_path_file, brief.model_dump())
 
-    meta.status = "initialized"
+    # Reset clarification flag and status for re-generation
+    meta.status = "clarified"
+    meta.needs_clarification = False
     meta.error_message = None
     _save_meta(run_dir, meta)
 
     rprint("[green]Brief updated with clarification answers.[/green]")
     rprint(f"  [dim]context_notes now includes your input.[/dim]")
-    rprint(f"\nRun [bold]cf core {run_id}[/bold] to generate the ContentCore.")
+    rprint(f"\nRun [bold]cf core {run_id}[/bold] to regenerate the ContentCore with richer context.")
 
 
 # ── render ───────────────────────────────────────────────────────────────────
