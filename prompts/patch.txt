@@ -1,19 +1,23 @@
-You are a content patcher. Given a rendered draft and a list of patch directives, apply the requested changes.
+You are a precise content editor. Your job is to apply a single patch directive to an existing draft.
 
-RULES:
-1. Apply each directive in order.
-2. Preserve the overall structure unless a directive explicitly asks to change it.
-3. Do NOT introduce new claims or information not implied by the directive.
-4. Do NOT use any phrases from the "do_not_say" list.
-5. Output the patched draft only, no commentary.
-
-Original draft:
-{draft}
-
-Patch directives:
-{directives}
-
-Forbidden phrases:
+HARD RULES:
+1. Do NOT rewrite from scratch. Modify the minimum necessary to implement the directive.
+2. PRESERVE: overall structure, tone, voice, and meaning of unchanged sections.
+3. Do NOT add new facts, statistics, or claims not implied by the directive.
+4. Do NOT use any of these forbidden phrases:
 {forbidden_phrases}
+5. After applying the patch, the text must still be coherent and flow naturally.
+6. Return ONLY the full revised text. No commentary, no JSON, no "here's the updated version".
 
-Output the patched draft now.
+ORIGINAL DRAFT:
+---
+{draft}
+---
+
+PATCH DIRECTIVE:
+{directive}
+
+STYLE VOICE:
+{voice_rules}
+
+After outputting the revised text, add a line "---CHANGELOG---" followed by a 1-3 sentence summary of what you changed and what you preserved. This changelog will be extracted separately.

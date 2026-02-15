@@ -9,6 +9,7 @@ from pydantic import BaseModel, Field
 
 Platform = Literal["blog", "linkedin", "x"]
 Lang = Literal["ru", "en"]
+PLATFORMS: tuple[str, ...] = ("blog", "linkedin", "x")
 ARTIFACT_NAMES = ("meta", "brief", "core", "blog", "linkedin", "x")
 
 
@@ -68,3 +69,23 @@ class DraftPack(BaseModel):
     blog: Optional[str] = None
     linkedin: Optional[str] = None
     x: Optional[str] = None
+
+
+# ── Clarification ────────────────────────────────────────────────────────────
+
+class ClarificationResult(BaseModel):
+    """LLM output: whether the brief needs clarification before core generation."""
+    needs_clarification: bool
+    questions: List[str] = Field(default_factory=list)
+
+
+# ── Patch metadata ───────────────────────────────────────────────────────────
+
+class PatchRecord(BaseModel):
+    """Metadata for a single patch application."""
+    patch_number: int
+    platform: str
+    directive: str
+    model: str
+    timestamp: str = Field(default_factory=lambda: datetime.utcnow().isoformat())
+    changelog: str = ""

@@ -11,16 +11,29 @@ import typer
 import yaml
 from rich import print as rprint
 from rich.console import Console
+from rich.panel import Panel
 from rich.table import Table
 
-from content_factory.models import ARTIFACT_NAMES, Brief, RunMeta
+from content_factory.models import (
+    ARTIFACT_NAMES,
+    PLATFORMS,
+    Brief,
+    ContentCore,
+    PatchRecord,
+    RunMeta,
+)
 from content_factory.storage import (
     artifact_path,
     create_run_dir,
     find_run_dir,
     list_runs,
+    next_patch_number,
     read_json,
+    save_patch_record,
+    save_run_prompt,
+    version_artifact,
     write_json,
+    write_text,
 )
 
 app = typer.Typer(
@@ -31,6 +44,35 @@ app = typer.Typer(
 console = Console()
 
 DEFAULT_RUNS_DIR = "runs"
+
+
+def _resolve_run(output: str, run_id: str) -> Path:
+    """Find a run directory or exit with an error."""
+    run_dir = find_run_dir(output, run_id)
+    if run_dir is None:
+        rprint(f"[red]Error:[/red] Run not found: {run_id}")
+        raise typer.Exit(1)
+    return run_dir
+
+
+def _load_meta(run_dir: Path) -> RunMeta:
+    meta_path = run_dir / "meta.json"
+    return RunMeta.model_validate(read_json(meta_path))
+
+
+def _save_meta(run_dir: Path, meta: RunMeta) -> None:
+    meta.updated_at = datetime.utcnow().isoformat()
+    write_json(run_dir / "meta.json", meta.model_dump())
+
+
+def _make_provider(model: str):
+    """Instantiate the OpenAI provider, exiting gracefully if key is missing."""
+    try:
+        from content_factory.llm.openai_provider import OpenAIProvider
+        return OpenAIProvider(model=model)
+    except EnvironmentError as exc:
+        rprint(f"[red]Error:[/red] {exc}")
+        raise typer.Exit(1)
 
 
 # ── generate ─────────────────────────────────────────────────────────────────
@@ -107,10 +149,7 @@ def show(
     artifact: str = typer.Option("meta", "-a", "--artifact", help=f"Artifact to display: {', '.join(ARTIFACT_NAMES)}"),
 ) -> None:
     """Print an artifact from a run to stdout."""
-    run_dir = find_run_dir(output, run_id)
-    if run_dir is None:
-        rprint(f"[red]Error:[/red] Run not found: {run_id}")
-        raise typer.Exit(1)
+    run_dir = _resolve_run(output, run_id)
 
     try:
         ap = artifact_path(run_dir, artifact)
@@ -124,7 +163,6 @@ def show(
 
     content = ap.read_text(encoding="utf-8")
     if ap.suffix == ".json":
-        # Pretty-print JSON
         try:
             data = json.loads(content)
             rprint(json.dumps(data, ensure_ascii=False, indent=2))
@@ -134,19 +172,23 @@ def show(
         console.print(content)
 
 
-# ── core ─────────────────────────────────────────────────────────────────────
+# ── core (with integrated clarification) ─────────────────────────────────────
 
 @app.command()
 def core(
     run_id: str = typer.Argument(..., help="Run ID (exact name or prefix)."),
     output: str = typer.Option(DEFAULT_RUNS_DIR, "-o", "--output", help="Base directory for runs."),
     model: str = typer.Option("gpt-4o-mini", "--model", "-m", help="OpenAI model to use."),
+    skip_clarify: bool = typer.Option(False, "--skip-clarify", help="Skip the clarification check."),
 ) -> None:
-    """Generate ContentCore for a run using LLM."""
-    run_dir = find_run_dir(output, run_id)
-    if run_dir is None:
-        rprint(f"[red]Error:[/red] Run not found: {run_id}")
-        raise typer.Exit(1)
+    """Generate ContentCore for a run using LLM.
+
+    Before generating, the brief is evaluated for completeness.
+    If clarification is needed, questions are printed and core generation is paused.
+    Use 'cf clarify' to provide answers, then re-run 'cf core'.
+    Pass --skip-clarify to bypass this check.
+    """
+    run_dir = _resolve_run(output, run_id)
 
     brief_path = run_dir / "brief.json"
     if not brief_path.exists():
@@ -154,37 +196,60 @@ def core(
         raise typer.Exit(1)
 
     brief = Brief.model_validate(read_json(brief_path))
+    meta = _load_meta(run_dir)
+    provider = _make_provider(model)
 
-    # Load meta
-    meta_path = run_dir / "meta.json"
-    meta = RunMeta.model_validate(read_json(meta_path))
+    # ── Step 1: Clarification check ──────────────────────────────────────
+    if not skip_clarify:
+        rprint(f"[blue]Evaluating brief completeness[/blue] for [bold]{brief.topic}[/bold]...")
 
-    # Try to create provider
-    try:
-        from content_factory.llm.openai_provider import OpenAIProvider
+        from content_factory.graph import run_clarify_pipeline
 
-        provider = OpenAIProvider(model=model)
-    except EnvironmentError as exc:
-        rprint(f"[red]Error:[/red] {exc}")
-        raise typer.Exit(1)
+        try:
+            clarify_result, clarify_error = run_clarify_pipeline(brief=brief, provider=provider)
+        except Exception as exc:
+            clarify_error = str(exc)
+            clarify_result = None
 
+        if clarify_error:
+            rprint(f"[yellow]Warning:[/yellow] Clarification check failed: {clarify_error}")
+            rprint("[dim]Proceeding with core generation anyway.[/dim]")
+        elif clarify_result and clarify_result.needs_clarification:
+            # Brief needs work -- print questions and stop
+            meta.status = "needs_clarification"
+            meta.model = model
+            meta.error_message = None
+            _save_meta(run_dir, meta)
+
+            rprint("\n[yellow]Brief needs clarification.[/yellow] Answer the questions below, then run:")
+            rprint(f"  [bold]cf clarify {run_id} -m \"your answers\"[/bold]\n")
+            for i, q in enumerate(clarify_result.questions, 1):
+                rprint(f"  [bold]{i}.[/bold] {q}")
+            rprint()
+
+            # Save questions to run for auditability
+            write_json(
+                run_dir / "clarification.json",
+                clarify_result.model_dump(),
+            )
+            return
+
+    # ── Step 2: Core generation ──────────────────────────────────────────
     rprint(f"[blue]Generating ContentCore[/blue] for [bold]{brief.topic}[/bold] with model [dim]{model}[/dim]...")
 
-    try:
-        from content_factory.graph import run_core_pipeline
+    from content_factory.graph import run_core_pipeline
 
+    try:
         core_result, error = run_core_pipeline(brief=brief, provider=provider)
     except Exception as exc:
         error = str(exc)
         core_result = None
 
-    now = datetime.utcnow().isoformat()
-
     if error:
         meta.status = "error"
         meta.error_message = error
-        meta.updated_at = now
-        write_json(meta_path, meta.model_dump())
+        meta.model = model
+        _save_meta(run_dir, meta)
         rprint(f"[red]Error during core generation:[/red] {error}")
         raise typer.Exit(1)
 
@@ -192,46 +257,227 @@ def core(
     core_path = run_dir / "core.json"
     write_json(core_path, core_result.model_dump())  # type: ignore[union-attr]
 
-    # Update meta
     meta.status = "core_generated"
     meta.model = model
-    meta.updated_at = now
     meta.error_message = None
-    write_json(meta_path, meta.model_dump())
+    _save_meta(run_dir, meta)
 
     rprint(f"[green]ContentCore written:[/green] {core_path}")
 
 
-# ── patch (stub) ─────────────────────────────────────────────────────────────
+# ── clarify ──────────────────────────────────────────────────────────────────
+
+@app.command()
+def clarify(
+    run_id: str = typer.Argument(..., help="Run ID (exact name or prefix)."),
+    message: str = typer.Option(..., "-m", "--message", help="Answers to clarification questions."),
+    output: str = typer.Option(DEFAULT_RUNS_DIR, "-o", "--output", help="Base directory for runs."),
+) -> None:
+    """Provide answers to clarification questions and update the brief.
+
+    Appends your answers to context_notes in brief.json and resets status
+    so that 'cf core' can run again.
+    """
+    run_dir = _resolve_run(output, run_id)
+
+    brief_path = run_dir / "brief.json"
+    if not brief_path.exists():
+        rprint(f"[red]Error:[/red] brief.json not found in {run_dir}")
+        raise typer.Exit(1)
+
+    brief = Brief.model_validate(read_json(brief_path))
+    meta = _load_meta(run_dir)
+
+    # Append answers to context_notes
+    if brief.context_notes:
+        brief.context_notes = brief.context_notes.rstrip() + "\n\n" + message
+    else:
+        brief.context_notes = message
+
+    write_json(brief_path, brief.model_dump())
+
+    meta.status = "initialized"
+    meta.error_message = None
+    _save_meta(run_dir, meta)
+
+    rprint("[green]Brief updated with clarification answers.[/green]")
+    rprint(f"  [dim]context_notes now includes your input.[/dim]")
+    rprint(f"\nRun [bold]cf core {run_id}[/bold] to generate the ContentCore.")
+
+
+# ── render ───────────────────────────────────────────────────────────────────
+
+@app.command()
+def render(
+    run_id: str = typer.Argument(..., help="Run ID (exact name or prefix)."),
+    platform: str = typer.Option("linkedin", "--platform", "-p", help="Platform to render: linkedin (more coming)."),
+    model: str = typer.Option("gpt-4o-mini", "--model", "-m", help="OpenAI model to use."),
+    output: str = typer.Option(DEFAULT_RUNS_DIR, "-o", "--output", help="Base directory for runs."),
+) -> None:
+    """Render a platform-specific draft from ContentCore."""
+    if platform not in PLATFORMS:
+        rprint(f"[red]Error:[/red] Invalid platform '{platform}'. Choose: {', '.join(PLATFORMS)}")
+        raise typer.Exit(1)
+
+    # Currently only linkedin has a full render implementation
+    if platform != "linkedin":
+        rprint(f"[yellow]Warning:[/yellow] Render for '{platform}' is not yet implemented. Only 'linkedin' is supported.")
+        raise typer.Exit(1)
+
+    run_dir = _resolve_run(output, run_id)
+
+    # Load required artifacts
+    core_path = run_dir / "core.json"
+    if not core_path.exists():
+        rprint(f"[red]Error:[/red] core.json not found. Run 'cf core {run_id}' first.")
+        raise typer.Exit(1)
+
+    core_data = read_json(core_path)
+    if not core_data:
+        rprint(f"[red]Error:[/red] core.json is empty. Run 'cf core {run_id}' first.")
+        raise typer.Exit(1)
+
+    try:
+        core_obj = ContentCore.model_validate(core_data)
+    except Exception as exc:
+        rprint(f"[red]Error:[/red] Invalid core.json: {exc}")
+        raise typer.Exit(1)
+
+    brief = Brief.model_validate(read_json(run_dir / "brief.json"))
+    meta = _load_meta(run_dir)
+    provider = _make_provider(model)
+
+    rprint(f"[blue]Rendering {platform} draft[/blue] for [bold]{brief.topic}[/bold]...")
+
+    from content_factory.graph import run_render_pipeline
+
+    try:
+        rendered, prompt_used, error = run_render_pipeline(
+            brief=brief,
+            core=core_obj,
+            provider=provider,
+            platform=platform,
+        )
+    except Exception as exc:
+        error = str(exc)
+        rendered = None
+        prompt_used = None
+
+    if error:
+        meta.status = "error"
+        meta.error_message = error
+        meta.model = model
+        _save_meta(run_dir, meta)
+        rprint(f"[red]Error during rendering:[/red] {error}")
+        raise typer.Exit(1)
+
+    # Write the rendered draft
+    draft_path = artifact_path(run_dir, platform)
+    write_text(draft_path, rendered + "\n")  # type: ignore[operator]
+
+    # Save the prompt used for auditability
+    if prompt_used:
+        save_run_prompt(run_dir, f"{platform}_render.txt", prompt_used)
+
+    # Update meta
+    meta.status = f"{platform}_rendered"
+    meta.model = model
+    meta.error_message = None
+    _save_meta(run_dir, meta)
+
+    rprint(f"[green]{platform.capitalize()} draft written:[/green] {draft_path}")
+    rprint(f"  [dim]{len(rendered)} chars[/dim]")  # type: ignore[arg-type]
+
+
+# ── patch ────────────────────────────────────────────────────────────────────
 
 @app.command()
 def patch(
     run_id: str = typer.Argument(..., help="Run ID (exact name or prefix)."),
     platform: str = typer.Option(..., "--platform", "-p", help="Platform: blog, linkedin, or x."),
     message: str = typer.Option(..., "-m", "--message", help="Patch directive."),
+    model: str = typer.Option("gpt-4o-mini", "--model", help="OpenAI model to use."),
     output: str = typer.Option(DEFAULT_RUNS_DIR, "-o", "--output", help="Base directory for runs."),
 ) -> None:
-    """Append a patch directive for a platform (stub -- application not yet implemented)."""
-    run_dir = find_run_dir(output, run_id)
-    if run_dir is None:
-        rprint(f"[red]Error:[/red] Run not found: {run_id}")
+    """Apply a patch directive to an existing platform draft.
+
+    Backs up the current version, applies minimal LLM-driven rewrite,
+    and saves patch metadata with changelog.
+    """
+    if platform not in PLATFORMS:
+        rprint(f"[red]Error:[/red] Invalid platform '{platform}'. Choose: {', '.join(PLATFORMS)}")
         raise typer.Exit(1)
 
-    if platform not in ("blog", "linkedin", "x"):
-        rprint(f"[red]Error:[/red] Invalid platform '{platform}'. Choose: blog, linkedin, x")
+    run_dir = _resolve_run(output, run_id)
+
+    # Load current draft
+    draft_path = artifact_path(run_dir, platform)
+    if not draft_path.exists() or draft_path.read_text(encoding="utf-8").strip() == "(pending)":
+        rprint(f"[red]Error:[/red] No rendered {platform} draft found. Run 'cf render {run_id} -p {platform}' first.")
         raise typer.Exit(1)
 
-    patch_file = run_dir / f"patches_{platform}.jsonl"
-    entry = json.dumps(
-        {"timestamp": datetime.utcnow().isoformat(), "directive": message},
-        ensure_ascii=False,
+    current_draft = draft_path.read_text(encoding="utf-8")
+    meta = _load_meta(run_dir)
+    provider = _make_provider(model)
+
+    rprint(f"[blue]Applying patch[/blue] to {platform} draft: [dim]{message}[/dim]")
+
+    from content_factory.graph import run_patch_pipeline
+
+    try:
+        patched, changelog, prompt_used, error = run_patch_pipeline(
+            draft=current_draft,
+            directive=message,
+            provider=provider,
+        )
+    except Exception as exc:
+        error = str(exc)
+        patched = None
+        changelog = None
+        prompt_used = None
+
+    if error:
+        meta.status = "error"
+        meta.error_message = error
+        meta.model = model
+        _save_meta(run_dir, meta)
+        rprint(f"[red]Error during patching:[/red] {error}")
+        raise typer.Exit(1)
+
+    # Version the current draft before overwriting
+    version_num = version_artifact(run_dir, platform)
+    rprint(f"  [dim]Previous version saved as {platform}_v{version_num}.md[/dim]")
+
+    # Write patched draft
+    write_text(draft_path, patched + "\n")  # type: ignore[operator]
+
+    # Save prompt used
+    if prompt_used:
+        patch_num = next_patch_number(run_dir, platform)
+        save_run_prompt(run_dir, f"patch_{patch_num:03d}_{platform}.txt", prompt_used)
+    else:
+        patch_num = next_patch_number(run_dir, platform)
+
+    # Save patch record
+    record = PatchRecord(
+        patch_number=patch_num,
+        platform=platform,
+        directive=message,
+        model=model,
+        changelog=changelog or "",
     )
-    with open(patch_file, "a", encoding="utf-8") as f:
-        f.write(entry + "\n")
+    record_path = save_patch_record(run_dir, record.model_dump(), platform, patch_num)
 
-    rprint(f"[green]Patch appended:[/green] {patch_file}")
-    rprint(f"  [dim]{message}[/dim]")
-    rprint("[yellow]Note:[/yellow] Full patch application is not yet implemented.")
+    # Update meta
+    meta.status = f"{platform}_patched"
+    meta.model = model
+    meta.error_message = None
+    _save_meta(run_dir, meta)
+
+    rprint(f"[green]Patch applied:[/green] {draft_path}")
+    if changelog:
+        rprint(Panel(changelog, title="Changelog", border_style="dim"))
+    rprint(f"  [dim]Patch record: {record_path}[/dim]")
 
 
 if __name__ == "__main__":

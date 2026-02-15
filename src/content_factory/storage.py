@@ -81,6 +81,12 @@ def read_json(path: Path) -> Any:
     return json.loads(path.read_text(encoding="utf-8"))
 
 
+def write_text(path: Path, content: str) -> None:
+    """Write text content to a file, creating parent dirs if needed."""
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(content, encoding="utf-8")
+
+
 def list_runs(base_dir: str | Path, limit: int = 20) -> List[str]:
     """Return run directory names sorted newest-first."""
     base = Path(base_dir)
@@ -120,3 +126,59 @@ def artifact_path(run_dir: str | Path, name: str) -> Path:
     if name not in mapping:
         raise ValueError(f"Unknown artifact '{name}'. Choose from: {', '.join(mapping)}")
     return mapping[name]
+
+
+# ── Versioning helpers ───────────────────────────────────────────────────────
+
+def version_artifact(run_dir: Path, platform: str) -> int:
+    """Back up the current platform draft to a versioned copy.
+
+    E.g. linkedin.md -> linkedin_v1.md.  Returns the version number assigned.
+    """
+    current = artifact_path(run_dir, platform)
+    if not current.exists():
+        return 0
+
+    # Find next version number by scanning existing versioned files
+    version = 1
+    while (run_dir / f"{platform}_v{version}.md").exists():
+        version += 1
+
+    dest = run_dir / f"{platform}_v{version}.md"
+    dest.write_text(current.read_text(encoding="utf-8"), encoding="utf-8")
+    return version
+
+
+# ── Prompts subdir (stores prompts used in a run for auditability) ───────────
+
+def save_run_prompt(run_dir: Path, name: str, content: str) -> Path:
+    """Save a prompt that was used during a run for reproducibility.
+
+    Written to runs/<run_id>/prompts/<name>.  Returns the path.
+    """
+    prompts_dir = run_dir / "prompts"
+    prompts_dir.mkdir(exist_ok=True)
+    path = prompts_dir / name
+    path.write_text(content, encoding="utf-8")
+    return path
+
+
+# ── Patch storage ────────────────────────────────────────────────────────────
+
+def next_patch_number(run_dir: Path, platform: str) -> int:
+    """Return the next patch sequence number for a given platform."""
+    patches_dir = run_dir / "patches"
+    if not patches_dir.is_dir():
+        return 1
+    existing = sorted(patches_dir.glob(f"*_{platform}.json"))
+    return len(existing) + 1
+
+
+def save_patch_record(run_dir: Path, record_data: dict, platform: str, number: int) -> Path:
+    """Write a patch record JSON file.  Returns the path."""
+    patches_dir = run_dir / "patches"
+    patches_dir.mkdir(exist_ok=True)
+    filename = f"{number:03d}_{platform}.json"
+    path = patches_dir / filename
+    write_json(path, record_data)
+    return path
