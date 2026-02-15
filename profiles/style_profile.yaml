@@ -1,0 +1,30 @@
+# Style Profile for content-factory
+# Controls tone, voice, and anti-patterns.
+
+forbidden_ai_smell:
+  description: >
+    Phrases that signal AI-generated slop. These MUST be avoided
+    in all outputs regardless of platform or language.
+  avoid_phrases:
+    - "в мире, где"
+    - "давайте разберёмся"
+    - "не секрет, что"
+    - "в условиях стремительных изменений"
+    - "погрузимся"
+    - "как мы видим"
+    - "in a world where"
+    - "let's dive in"
+    - "it's no secret that"
+    - "in today's fast-paced"
+    - "let's unpack"
+    - "game-changer"
+    - "buckle up"
+    - "without further ado"
+
+voice:
+  tone: "direct, specific, opinionated"
+  perspective: "practitioner sharing real experience"
+  avoid:
+    - generic advice
+    - unsupported claims
+    - filler sentences

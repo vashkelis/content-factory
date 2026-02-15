@@ -1,0 +1,33 @@
+# content-factory
+__pycache__/
+*.py[cod]
+*.egg-info/
+dist/
+build/
+.eggs/
+*.egg
+.venv/
+venv/
+env/
+
+# Runs directory (contains generated content)
+runs/
+
+# IDE
+.idea/
+.vscode/
+*.swp
+*.swo
+*~
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Hatch editable installs
+*.pth
+_content_factory.pyi
+
+# Env
+.env
+.env.local

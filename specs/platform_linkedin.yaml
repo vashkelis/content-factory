@@ -1,0 +1,16 @@
+# Platform spec: LinkedIn
+# Constraints and structure guidelines for LinkedIn posts.
+
+platform: linkedin
+max_length_chars: 3000
+min_length_chars: 500
+structure:
+  - hook (first 2 lines visible in feed -- must earn the click)
+  - body (short paragraphs, 1-3 sentences each)
+  - takeaway or CTA
+formatting:
+  line_breaks: generous (LinkedIn collapses dense text)
+  emojis: sparingly, max 2-3
+  hashtags: 3-5 at the end
+  lists: numbered or bulleted, short
+tone_override: null

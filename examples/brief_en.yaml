@@ -1,0 +1,15 @@
+# Example brief in English
+topic: "The hidden cost of 'just one more feature' in B2B SaaS"
+goal: "inform"
+audience: "product managers, engineering leads, founders"
+platform_targets:
+  - blog
+  - linkedin
+  - x
+language: "en"
+context_notes: >
+  Based on experience shipping a B2B product where feature bloat led to
+  a 3x increase in onboarding time. After a focused removal sprint,
+  activation rate improved by 15%.
+constraints:
+  tone: "direct, opinionated, practitioner voice"

@@ -1,0 +1,16 @@
+# Platform spec: X (Twitter)
+# Constraints and structure guidelines for X/Twitter posts and threads.
+
+platform: x
+single_post_max_chars: 280
+thread_max_posts: 12
+structure:
+  - hook tweet (standalone, interesting enough to stop scrolling)
+  - body tweets (each adds one idea, can stand alone)
+  - closing tweet (summary or CTA)
+formatting:
+  line_breaks: allowed within tweet
+  emojis: optional
+  hashtags: 0-2 (X algo de-prioritizes hashtag spam)
+  links: one at most, ideally in last tweet
+tone_override: "punchier, more compressed"

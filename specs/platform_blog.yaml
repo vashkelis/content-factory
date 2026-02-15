@@ -1,0 +1,17 @@
+# Platform spec: Blog
+# Constraints and structure guidelines for long-form blog posts.
+
+platform: blog
+max_length_words: 2500
+min_length_words: 800
+structure:
+  - title
+  - lead (2-3 sentences, hook)
+  - body (3-5 sections with subheadings)
+  - conclusion (call to action or takeaway)
+formatting:
+  headings: h2/h3
+  lists: allowed
+  code_blocks: allowed if relevant
+  images: optional placeholders
+tone_override: null
