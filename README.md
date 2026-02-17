@@ -1,7 +1,7 @@
 # content-factory
 
 Reproducible content-writing pipeline for Blog, LinkedIn, and X/Twitter.
-Supports RU/EN outputs and iterative patching.
+Supports various language outputs and iterative patching.
 
 ## Setup
 
