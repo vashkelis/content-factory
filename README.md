@@ -1,15 +1,49 @@
 # content-factory
 
-Reproducible content-writing pipeline for Blog, LinkedIn, and X/Twitter.
-Supports various language outputs and iterative patching.
+A content-writing pipeline that transforms your ideas into polished posts for Blog, LinkedIn, and X/Twitter.
 
-## Setup
+**What it does:** You provide a topic and your unique context (experience, data, examples) — the pipeline generates structured content across multiple platforms, maintaining your voice and avoiding generic AI-slop.
+
+## How It Works
+
+```
+Your Ideas (Brief) → Core Structure → Platform Drafts → Refine with Patches
+```
+
+1. **Brief** — Your topic, goal, audience, and the specific context that makes content unique
+2. **ContentCore** — AI extracts thesis, key points, and angle from your brief
+3. **Platform Drafts** — Renders the core into blog, LinkedIn, and X formats
+4. **Patches** — Iteratively refine drafts with targeted edits
+
+## Installation
 
 Requires Python 3.11 or higher.
 
+### 1. Check if you have Python 3.11+
+
+```bash
+python3.11 --version  # or python3.12, python3.13
+```
+
+If this works, skip to step 3. If not, install Python 3.11+.
+
+### 2. Install Python 3.11+ (if needed)
+
+**macOS (Homebrew):**
+```bash
+brew install python@3.11
+```
+
+**Ubuntu/Debian:**
+```bash
+sudo apt install python3.11 python3.11-venv
+```
+
+### 3. Create virtual environment and install
+
 ```bash
 cd content-factory
-python3.11 -m venv .venv
+python3.11 -m venv .venv  # use your installed version: python3.11, python3.12, etc.
 source .venv/bin/activate
 pip install -e .
 ```
@@ -49,60 +83,110 @@ your-private-repo/
 
 ## Quick Start
 
-### 1. Create starter files
+### 1. Create a brief
+
+A **brief** is where you define your content. It's a YAML file with your topic, audience, and most importantly — your unique context.
 
 ```bash
 cf init
 ```
 
-This creates `brief.yaml` and `style_profile.yaml` starter files in the current directory.
+This creates `brief.yaml`. Edit it:
 
-### 2. Generate a run from your brief
+```yaml
+topic: "Why most A/B tests fail"
+goal: "inform"
+audience: "product managers, growth engineers"
+platform_targets:
+  - blog
+  - linkedin
+  - x
+language: "en"
+context_notes: >
+  In our last 20 experiments, only 3 moved the needle. 
+  The pattern: tests with clear hypotheses worked; 
+  tests that were "let's try this" failed.
+  We now require a written hypothesis before any test.
+constraints:
+  tone: "direct, opinionated"
+```
+
+**Key insight:** The `context_notes` field is what makes your content unique. Include:
+- Personal experience or observations
+- Specific data, metrics, or results
+- Examples or anecdotes
+- Your opinion or stance
+
+Without context, the AI will produce generic content.
+
+### 2. Create a run
+
+A **run** is a workspace for one piece of content.
 
 ```bash
 cf generate brief.yaml
 ```
 
-This creates a run folder under `runs/` with placeholder artifacts:
-- `brief.json` -- normalized brief
-- `meta.json` -- run metadata (status, timestamps)
-- `core.json` -- empty, awaiting generation
-- `blog.md`, `linkedin.md`, `x.md` -- "(pending)"
+This creates `runs/20260217_141229_why-most-ab-tests-fail/` with:
+- `brief.json` — Your brief (normalized)
+- `meta.json` — Run status and metadata
+- `core.json` — Will hold the generated content structure
+- `blog.md`, `linkedin.md`, `x.md` — Platform drafts
 
-### 3. List recent runs
+### 3. Generate the content core
 
-```bash
-cf list
-```
-
-### 4. Inspect a run artifact
-
-```bash
-cf show <run_id> -a meta
-cf show <run_id> -a brief
-cf show <run_id> -a core
-```
-
-Artifact names: `meta`, `brief`, `core`, `blog`, `linkedin`, `x`.
-
-### 5. Generate ContentCore with LLM
+The **ContentCore** extracts thesis, key points, and angle from your brief.
 
 ```bash
 cf core <run_id>
-cf core <run_id> --model gpt-4o
 ```
 
-This calls the LLM to synthesize a structured `ContentCore` from the brief,
-validates the output, and writes `core.json`. The `meta.json` status updates
-to `core_generated`.
+This calls the LLM and writes `core.json`:
+```json
+{
+  "thesis": "A/B tests fail when they lack clear hypotheses",
+  "angle": "Hypothesis-driven testing beats 'let's try this'",
+  "points": [
+    {"claim": "...", "support": ["..."]},
+    ...
+  ]
+}
+```
 
-### 6. Render a platform draft
+If your brief lacks context, the pipeline will ask clarifying questions.
+
+### 4. Render platform drafts
 
 ```bash
 cf render <run_id> -p linkedin
+cf render <run_id> -p blog
+cf render <run_id> -p x
 ```
 
-### 7. Apply a patch to refine the draft
+Each command generates a platform-specific draft in `runs/<run_id>/linkedin.md`.
+
+### 5. Refine with patches
+
+Not happy with a draft? Apply targeted edits:
+
+```bash
+cf patch <run_id> -p linkedin -m "Add a specific example from our 3 successful tests"
+```
+
+The old version is backed up (`linkedin_v1.md`) and a changelog is saved.
+
+## All Commands
+
+| Command | Description |
+|---------|-------------|
+| `cf init` | Create starter brief.yaml and style_profile.yaml |
+| `cf generate <brief.yaml>` | Create a new run from a brief |
+| `cf list` | List recent runs |
+| `cf show <run_id> -a <artifact>` | View an artifact (meta, brief, core, blog, linkedin, x) |
+| `cf core <run_id>` | Generate ContentCore from brief |
+| `cf render <run_id> -p <platform>` | Render platform-specific draft |
+| `cf patch <run_id> -p <platform> -m "directive"` | Apply targeted edit to a draft |
+| `cf clarify <run_id> -m "answers"` | Add context to a brief that needs clarification |
 
 ## Project Structure
 
@@ -138,33 +222,47 @@ content-factory/
 
 ## Customization
 
-### Private Resources Directory
-
-Set `CONTENT_FACTORY_PRIVATE_DIR` to override any bundled resource with your own version:
-
-- `prompts/*.txt` — Your custom LLM prompts
-- `profiles/style_profile.yaml` — Your personal voice and forbidden phrases
-- `examples/*.yaml` — Your example briefs
-
 ### Style Profile
 
-Edit `profiles/style_profile.yaml` to add forbidden phrases or adjust voice:
+Control the voice and avoid AI-generated phrases. Edit `style_profile.yaml`:
 
 ```yaml
 forbidden_ai_smell:
   avoid_phrases:
     - "in a world where"
     - "let's dive in"
+    - "game-changer"
+
+voice:
+  tone: "direct, specific, opinionated"
+  perspective: "practitioner sharing real experience"
 ```
-
-### Prompts
-
-All prompts live in `prompts/` as plain text with `{placeholder}` variables.
-Edit them to adjust LLM behavior.
 
 ### Platform Specs
 
-Edit `specs/platform_*.yaml` to change length limits, structure rules, etc.
+Each platform has constraints (length, formatting). Edit `specs/platform_linkedin.yaml` to change:
+- Character limits
+- Emoji policy
+- Hashtag count
+- Structure requirements
+
+### Private Resources Directory
+
+To keep your prompts and profiles private (separate repo):
+
+```bash
+export CONTENT_FACTORY_PRIVATE_DIR=/path/to/your-private-repo
+```
+
+Create this structure:
+```
+your-private-repo/
+  prompts/        # Your custom LLM prompts
+  profiles/       # Your personal style profile
+  examples/       # Your example briefs
+```
+
+The pipeline checks your private directory first, then falls back to bundled defaults.
 
 ## Optional HTTP API
 
