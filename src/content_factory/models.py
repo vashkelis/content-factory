@@ -20,7 +20,7 @@ class Brief(BaseModel):
     goal: str = "inform"
     audience: str = "builders, founders, product people"
     platform_targets: List[Platform] = Field(default_factory=lambda: ["blog", "linkedin", "x"])
-    language: Lang = "ru"
+    language: Lang = "en"
     context_notes: Optional[str] = None
     constraints: Dict[str, str] = Field(default_factory=dict)
 

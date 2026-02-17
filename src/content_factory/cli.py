@@ -492,5 +492,88 @@ def patch(
     rprint(f"  [dim]Patch record: {record_path}[/dim]")
 
 
+# ── init ────────────────────────────────────────────────────────────────────
+
+EXAMPLE_BRIEF = '''# Example brief for content-factory
+# Copy this file and customize for your content
+
+topic: "Your topic here"
+goal: "inform"
+audience: "your target audience"
+platform_targets:
+  - blog
+  - linkedin
+  - x
+language: "en"
+context_notes: >
+  Add your context, examples, data, or personal experience here.
+  This is what makes the content specific and non-generic.
+constraints:
+  tone: "direct, opinionated"
+'''
+
+EXAMPLE_STYLE_PROFILE = '''# Style Profile for content-factory
+# Controls tone, voice, and anti-patterns.
+
+forbidden_ai_smell:
+  description: >
+    Phrases that signal AI-generated content. These MUST be avoided.
+  avoid_phrases:
+    - "in a world where"
+    - "let's dive in"
+    - "it's no secret that"
+    - "in today's fast-paced"
+    - "let's unpack"
+    - "game-changer"
+
+voice:
+  tone: "direct, specific, opinionated"
+  perspective: "practitioner sharing real experience"
+  avoid:
+    - generic advice
+    - unsupported claims
+    - filler sentences
+'''
+
+
+@app.command()
+def init(
+    output_dir: str = typer.Option(".", "-o", "--output", help="Directory to create starter files in."),
+    force: bool = typer.Option(False, "--force", help="Overwrite existing files."),
+) -> None:
+    """Create starter example brief and style profile files.
+
+    Run this after cloning the repo to get started quickly:
+        cf init
+        cf init -o ./my-content-setup
+    """
+    out = Path(output_dir)
+    out.mkdir(parents=True, exist_ok=True)
+
+    # Create example brief
+    brief_path = out / "brief.yaml"
+    if brief_path.exists() and not force:
+        rprint(f"[yellow]Skipped:[/yellow] {brief_path} already exists (use --force to overwrite)")
+    else:
+        brief_path.write_text(EXAMPLE_BRIEF, encoding="utf-8")
+        rprint(f"[green]Created:[/green] {brief_path}")
+
+    # Create style profile
+    profile_path = out / "style_profile.yaml"
+    if profile_path.exists() and not force:
+        rprint(f"[yellow]Skipped:[/yellow] {profile_path} already exists (use --force to overwrite)")
+    else:
+        profile_path.write_text(EXAMPLE_STYLE_PROFILE, encoding="utf-8")
+        rprint(f"[green]Created:[/green] {profile_path}")
+
+    rprint()
+    rprint("Next steps:")
+    rprint(f"  1. Edit [bold]{brief_path.name}[/bold] with your topic and context")
+    rprint(f"  2. Run: [bold]cf generate {brief_path}[/bold]")
+    rprint()
+    rprint("For private/custom resources, set:")
+    rprint("  export CONTENT_FACTORY_PRIVATE_DIR=/path/to/your/private/dir")
+
+
 if __name__ == "__main__":
     app()

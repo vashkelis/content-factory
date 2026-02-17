@@ -31,3 +31,7 @@ _content_factory.pyi
 # Env
 .env
 .env.local
+
+# Private resources (prompts, profiles, examples)
+# Set CONTENT_FACTORY_PRIVATE_DIR to point to your private repo
+private/

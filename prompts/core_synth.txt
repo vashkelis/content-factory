@@ -19,27 +19,15 @@ OUTPUT RULES (HARD):
   "source_notes": "string or null"
 }
 
-CONTENT RULES (HARD FACT POLICY):
-3. You may ONLY use *specific facts* (numbers, percentages, counts, dates, experiment results, internal metrics like NPS, MRR, conversion, “we saw…”, “in our experiment…”. if they are explicitly present in the brief’s context_notes.
-4. If context_notes do NOT contain any numbers/metrics, then:
-   - Do NOT include ANY numbers (e.g., 20%, 12, <2%, NPS, “twice”, “3x”, “tenfold”, etc.).
-   - Do NOT mention “our experiment”, “we measured”, “we observed”, or any internal results.
-   - Use qualitative reasoning only.
-5. If a metric/example would strengthen a point but is not provided, use a placeholder:
+CONTENT RULES:
+3. Produce 3–5 points. Each point must have at least 2 support items.
+4. Direct practitioner voice. No filler.
+5. Thesis must be opinionated and non-obvious.
+6. Do NOT invent facts, statistics, or specific numbers unless they appear in context_notes.
+7. If a metric/example would strengthen a point but is not provided, use a placeholder:
    - Put it in support as: "METRIC_NEEDED: <what metric or example would prove this>"
-   - Or set example to: "METRIC_NEEDED: <concrete example to add>"
-6. Do NOT invent named companies, studies, or authors unless they appear in context_notes. Prefer generic examples if needed.
 
-QUALITY RULES:
-7. Produce 3–5 points. Each point must have at least 2 support items.
-8. Direct practitioner voice. No filler. No motivational tone.
-9. Thesis must be opinionated and non-obvious (not a restatement of the topic).
-10. Angle must explain why this framing is interesting/contrarian in one line.
-11. The "do_not_say" list MUST include these forbidden AI-smell phrases:
+FORBIDDEN PHRASES:
 {forbidden_phrases}
-
-SOURCE NOTES:
-12. If you used any specific fact from context_notes, set source_notes to "From brief context_notes: <short quote or paraphrase>".
-    Otherwise set source_notes to null.
 
 Now output the JSON.

@@ -18,12 +18,47 @@ Set your OpenAI API key (required for `cf core`):
 export OPENAI_API_KEY='sk-...'
 ```
 
-## Quick Start
+### Private Resources (Optional)
 
-### 1. Generate a run from a brief
+If you have custom prompts, style profiles, or examples in a separate private repo:
 
 ```bash
-cf generate examples/brief_ru.yaml
+export CONTENT_FACTORY_PRIVATE_DIR=/path/to/your/private/content-factory-private
+```
+
+The code will look for resources in your private directory first, then fall back to bundled defaults.
+This allows you to keep your prompt engineering IP and personal style separate from the open-source code.
+
+Private directory structure:
+```
+your-private-repo/
+  prompts/
+    core_synth.txt
+    clarify.txt
+    render_linkedin.txt
+    patch.txt
+    ...
+  profiles/
+    style_profile.yaml
+  examples/
+    brief_ru.yaml
+    brief_en.yaml
+```
+
+## Quick Start
+
+### 1. Create starter files
+
+```bash
+cf init
+```
+
+This creates `brief.yaml` and `style_profile.yaml` starter files in the current directory.
+
+### 2. Generate a run from your brief
+
+```bash
+cf generate brief.yaml
 ```
 
 This creates a run folder under `runs/` with placeholder artifacts:
@@ -32,13 +67,13 @@ This creates a run folder under `runs/` with placeholder artifacts:
 - `core.json` -- empty, awaiting generation
 - `blog.md`, `linkedin.md`, `x.md` -- "(pending)"
 
-### 2. List recent runs
+### 3. List recent runs
 
 ```bash
 cf list
 ```
 
-### 3. Inspect a run artifact
+### 4. Inspect a run artifact
 
 ```bash
 cf show <run_id> -a meta
@@ -48,7 +83,7 @@ cf show <run_id> -a core
 
 Artifact names: `meta`, `brief`, `core`, `blog`, `linkedin`, `x`.
 
-### 4. Generate ContentCore with LLM
+### 5. Generate ContentCore with LLM
 
 ```bash
 cf core <run_id>
@@ -59,13 +94,13 @@ This calls the LLM to synthesize a structured `ContentCore` from the brief,
 validates the output, and writes `core.json`. The `meta.json` status updates
 to `core_generated`.
 
-### 5. Append a patch directive (stub)
+### 6. Render a platform draft
 
 ```bash
-cf patch <run_id> --platform blog -m "Make the introduction shorter"
+cf render <run_id> -p linkedin
 ```
 
-Patch application is not yet implemented; directives are logged for later use.
+### 7. Apply a patch to refine the draft
 
 ## Project Structure
 
@@ -95,12 +130,19 @@ content-factory/
     qa.txt                # QA prompt (future)
     patch.txt             # Patch prompt (future)
   examples/
-    brief_ru.yaml         # Sample Russian brief
     brief_en.yaml         # Sample English brief
   runs/                   # Generated content (gitignored)
 ```
 
 ## Customization
+
+### Private Resources Directory
+
+Set `CONTENT_FACTORY_PRIVATE_DIR` to override any bundled resource with your own version:
+
+- `prompts/*.txt` — Your custom LLM prompts
+- `profiles/style_profile.yaml` — Your personal voice and forbidden phrases
+- `examples/*.yaml` — Your example briefs
 
 ### Style Profile
 

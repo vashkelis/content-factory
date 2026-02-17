@@ -7,7 +7,7 @@ HARD RULES:
 4. Do NOT use any of these forbidden phrases:
 {forbidden_phrases}
 5. After applying the patch, the text must still be coherent and flow naturally.
-6. Return ONLY the full revised text. No commentary, no JSON, no "here's the updated version".
+6. Return ONLY the full revised text. No commentary, no JSON.
 
 ORIGINAL DRAFT:
 ---
