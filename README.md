@@ -5,9 +5,11 @@ Supports various language outputs and iterative patching.
 
 ## Setup
 
+Requires Python 3.11 or higher.
+
 ```bash
 cd content-factory
-python -m venv .venv
+python3.11 -m venv .venv
 source .venv/bin/activate
 pip install -e .
 ```
